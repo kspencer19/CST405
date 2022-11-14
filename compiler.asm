@@ -1,11 +1,15 @@
 .text
 main:
-li $t1, 4
-li $t2, 5
-li $t3, 16
+	addi $a0, $zero, 100
+	addi $a1, $zero, 300
+jal add
+move $t5, $v1
 li $v0, 1
-move $a0 $t3
+move $a0 $t5
 syscall
 li $v0, 10
 syscall
 .end main
+add:
+	add $v1, $a0, $a1
+	jr $ra

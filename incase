@@ -6,7 +6,7 @@
 #include "symbolTable.h"
 #include "symtab.h"
 #include "AST.h"
-#include "irCode.h"
+#include "IrCode.h"
 #include "Assembly.h"
 
 extern int yylex();
@@ -19,8 +19,6 @@ char currentScope[50] = "global";
 char label[50];
 char otherScope[50];
 char returnName[50];
-
-int inreturn = 0;
 
 char *returnType;
 
@@ -67,7 +65,7 @@ int semanticChecks = 1;
 %printer { fprintf(yyoutput, "%s", $$); } ID;
 %printer { fprintf(yyoutput, "%d", $$); } NUMBER;
 
-%type <ast> Program DeclList Decl VarDeclList VarDecl Array FunDecl ParamDecl ParamDecList ParamDecListTail Block CallList StmtList Stmt Expr Math
+%type <ast> Program DeclList Decl VarDeclList VarDecl FunDecl ParamDecl ParamDecList ParamDecListTail Block CallList StmtList Stmt Expr Math
 %left PLUS MINUS
 %left MULTIPLY DIVIDE
 
@@ -89,7 +87,6 @@ DeclList:   Decl DeclList   {$1->left = $2;
 Decl: FunDecl
     | VarDeclList
     | StmtList
-    | Array
 ;
 
 VarDeclList: {$$ = NULL;}
@@ -98,68 +95,59 @@ VarDeclList: {$$ = NULL;}
 
 VarDecl:    TYPE ID SEMICOLON {printf("\n RECOGNIZED RULE: VARIABLE DECLERATION\n");
                                 // ----- Semantic Checks ----- //
-                                if (found($1, currentScope) == 0) {
-                                    
-                                    // ----- Symbol Table ----- //
-                                    addItem($2, "var", $1, currentScope);
+                                if (find($2, currentScope) == 1) {
+                                    printf("\n Semantic Checks: Variable already declared\n");
+                                   // exit(0);
+                                   // semanticChecks = 0;
                                 }
-                                // ----- AST Tree ----- //
-                                $$ = AST_assignment("Type", $1, $2);
 
-                                printTable();
+                                // ----- Symbol Table ----- //
+                                insert($2, "var", $1, currentScope);
+
+                                // ----- AST Actions ----- //
+                                $$ = AST_assignment("TYPE", $1, $2);
+
+                                printList();
                             }
-    // |       TYPE ID OBRACK NUMBER CBRACK SEMICOLON {printf("\n Array Decleration\n");}
-    
+    |       TYPE ID OBRACK NUMBER CBRACK SEMICOLON {printf("\n Array Decleration\n");
+                                                    // ? Semantic Checks
+
+                                                    // ? Symbol Table
+
+                                                    // ? AST Actions
+                                                    
+                                                    }
 
 ;
 
-Array:      TYPE ID OBRACK NUMBER CBRACK SEMICOLON {printf("\n Recognized Rule: Array Declaration\n");
+FunDecl: TYPE ID OPAREN                        {
 
-
-		// ----- SYMBOL TABLE ----- //
-		symTabAccess();
-
-		int inSymTable = found($2, currentScope);
-
-        //checks if ID is in the symbol table
-		if (inSymTable == 0) {
-            printf("Adding array to symbol table\n");
-			char index[5];
-			for (int i = 0; i < $4; i++) {
-				sprintf(index, "%s[%d]", $2, i);
-				addItem(index, "Array", $1, currentScope);				
-			}
-
-			
-		} else {
-			printf("Error: Array %s is already in the symbol table\n", $2);
-		}
-
-        printTable();
-        // -- AST -- //
-
-        // -- IR -- //
-
-		// -- Assembly -- //
-
-                            }
-;
-
-FunDecl: TYPE ID OPAREN {
                             // ----- Symbol Table ----- //
-                            addItem($2, "func", $1, currentScope);
+                            insert($2, "func", $1, currentScope);
 
-                            // copy function name to currentscope
+                            //Get the Current Scope
                             strcpy(currentScope, $2);
                             strcpy(label, $2);
                          } 
  ParamDecList CPAREN Block {printf("\nFunction\n");
+
+                             //----- Semantic Checks ----- //
+                             // ? This should work but it does not work IDK why.
+                             if($1 != returnType) {
+                                printf("\nSemantic Error\n");
+                             }
+                            printf("\n%s: %s\n\n\n", $1, returnType);
+                            
                             // ----- AST Tree ----- //
-                            $$ = ast_func("func", $2, $7);
+                            struct AST* rightHand = malloc(sizeof(struct AST));
+                            rightHand = add_tree($2, NULL, $7);
+                            //printf("\n\n%s\n\n", $7->right);
+                            $$ = ast_func("func", $1, rightHand); 
 
                             // ----- IR code ----- //
-                            labelFunction($2);
-                            MipsCreateFunction($2);
+                            labelFunction(label);
+                            MipsCreateFunction(label);
+
                          }
 ;
 
@@ -172,22 +160,17 @@ ParamDecListTail: ParamDecl
 ;
 
 ParamDecl: TYPE ID {printf("\nEncountered Parameter\n");
-                        // ----- Symbol Table ----- //
-                        addItem($2, "param", $1, currentScope);
-
-                        // ----- AST Actions ----- //
-                        $$ = AST_assignment("Type", $1, $2);
+                        insert($2, "param", $1, currentScope);
                     }
-
-// |   TYPE ID OBRACK CBRACK {printf("\nParameter Array\n");}
+|   TYPE ID OBRACK CBRACK {printf("\nParameter Array\n");}
 ;
 
 Block:  OCBRACE VarDeclList StmtList CCBRACE {printf("\nBlock Statement\n");
-                                                // ----- AST Actions ----- //
+                                                
+                                                //----- AST Actions ----- //
                                                 $$ = add_tree("block", $2, $3);
 
-                                                //currentScope -> Global
-                                                strcpy(currentScope, "global");                                                
+                                                strcpy(currentScope, "global");
                                             }
 ;
 
@@ -203,7 +186,11 @@ Expr:   Math {printf("\nRECOGNIZED RULE: Primary Statement\n");
 
                 }
     |   ID EQ ID {printf("\nRECONGINZED RULE: Assignment statement\n");
-                    // ----- Semantic Checks ----- //
+                // ----- AST Actions ----- //
+                $$ = AST_assignment("=", $1, $3);
+
+                //----- Semantic Checks -----//
+                    int semanticChecks = 1;
                     if(found($1, currentScope)  == 0) {
                         printf("Semantic Error: %s is not intialized\n", $1);
                         semanticChecks = 0;
@@ -214,164 +201,143 @@ Expr:   Math {printf("\nRECOGNIZED RULE: Primary Statement\n");
                         semanticChecks = 0;
                     }
 
-                    // Get Variable Types
-                    char *varType1 = getVariableType($1, currentScope);
-                    char *varType2 = getVariableType($3, currentScope);
+                    // Checks Variable Types
+                    char *varType1 = getVarType($1, currentScope);
+                    char *varType2 = getVarType($1, currentScope);
 
-                    // Check Variable Types
                     if(strcmp(varType1, varType2) != 0) {
                         printf("\nSemantic Error: variables Type mistmatch\n");
                         semanticChecks = 0;
                     }
 
-                    // ----- Symbol Table ----- //
-                    updateValue($1, currentScope, getValue($3, currentScope));
 
-                    // ----- AST Tree ----- //
-                    $$ = AST_assignment("=", $1, $3);
+                    // Update the Value in $1
+                    updateVal($1, currentScope, getValue($3, currentScope));
+                    
+                    // Perform Semantic Actions
+                    if(semanticChecks = 1) {
+                        printf("\n Passed Semantic Checks\n");
 
-                    // ----- IR code ----- //
-                }
+                        //emit IR code
+
+                        // emit Mips Code 
+                    }
+                 }
 
     |   ID EQ NUMBER {printf("\n RECONGIZED RULE: Number Decleration\n");
                         // ----- Semantic Checks ----- //
-                        if(found($1, currentScope) == 0) {
-                            printf("Semantic Error: ID has not been declared");
-                        }
+                            // IF the variables type do not work
+                            if(strcmp(getVarType($1, currentScope), "int") != 0) {
+                                printf("\n Variable is not of Type Int\n");
+                                semanticChecks = 0;
+                                exit(0);
+                            }
 
                         // ----- Symbol Table ----- //
                         char str[50];
                         sprintf(str, "%d", $3);
-                        updateValue($1, currentScope, str);
+                        updateVal($1, currentScope, str);
 
-                        // ----- AST Tree ----- //
+                        // ----- AST Actions ----- //
                         $$ = AST_assignment("=", $1, str);
 
-                        // ----- IR Code ----- //
-                        
-                        }
+                    }
     
     | ID EQ ID OPAREN CallList CPAREN {printf("\nCall Function: In ID\n");
-                                        // ----- Semantic Checks ----- //
-                                        if(found($1, currentScope)  == 0) {
-                                            printf("Semantic Error: %s is not intialized\n", $1);
-                                            semanticChecks = 0;
-                                        }
+                                // ----- Semantic Checks ----- //
 
-                                        if(found($3, currentScope)  == 0) {
-                                            printf("Semantic Error: %s is not intialized\n", $3);
-                                            semanticChecks = 0;
-                                        }
+                                // ----- AST Actions ----- //
 
-                                        // Get Variable Types
-                                        char *varType1 = getVariableType($1, currentScope);
-                                        char *varType2 = getVariableType($3, currentScope);
+                                //Generate IR code
+                                IRFunctionCall($3);
+                                mipsJumpFunction(label);
+                                
+                                //Generate Mips Assembly Code
 
-                                        // Check Variable Types
-                                        if(strcmp(varType1, varType2) != 0) {
-                                            printf("\nSemantic Error: variables Type mistmatch\n");
-                                            semanticChecks = 0;
-                                    }
-
-                                      // ----- AST Tree ----- //
-                                      // ! Not quite sure what this should look like yet.
-
-                                      // ----- IR Code ----- //
-                                      mipsJumpFunction(label);
-                        }   
+                            }   
 
         
-    // | ID OBRACK NUMBER CBRACK EQ Expr {printf("\n Recongized Rule: Array Expression\n");
+    | ID OBRACK Expr CBRACK EQ Expr {printf("\n Recongized Rule: Array Expression\n"); 
+                                        // ? Semantic Checks
+                                        
+                                        // ? Symbol Table
 
-
-	// }
-    
-    
-    
-    
-    
-    
-    
+                                        // ? AST Actions
+                                    }
 
     | ID EQ Math {printf("\nRecongized Rule: Math Expression\n");
-                    // ----- Semantic Checks ----- //
-                    if(found($1, currentScope) == 0) {
-                        printf("Error: Variable is not found");
+                    // ----- AST Actions ----- //
+                    $$ = idMathexp("=", $1, $3);
+
+                    // ----- Semantic Checks ----- // 
+                    if(find($1, currentScope) == 0) {
+                        printf("\nError: Variable not found\n");
                         semanticChecks = 0;
                     }
-                    // put the value here
-                    if($3->isNumber == 1) {
-                        updateValue($1, currentScope, $3->nodeType);
 
-                        printf("\n\n\n\n%s\n\n\n\n", $3->nodeType);
-                
-                        // ----- IR code ----- //
-                        loadAddition($1, currentScope);
+                    //updates value to 2 + 2 = 4
+                    updateVal($1, currentScope, $3->nodeType);
 
-                    } else {
-                        // ----- IR code ----- //
-                        printf("Not a number");
-                    }
+                    //----- IR Code----- //
+                    emitConstantIntAssignment($1, $3->nodeType, currentScope);
+                    mipsInside();
+                    loadAddition($1, currentScope);
+                    
+                    //Gets the Other Scope
+                    
 
-                    // ----- AST Tree ----- //
-                    $$ = idMathexp("=", $1, $3);
-                
+                    printList();
                 }
 
               
     |   WRITE ID {printf("\nRECONGIZED RULE: Print Statement\n");
-                    // ----- AST Actions ----- //
-                     $$ = AST_Write("Write", $2, "");
+                    $$ = AST_Write("Write", $2, ""); // place the write statement in AST
 
-                     // ----- IR Code ----- //
-                     if (inreturn == 1) {
-                     moveFunction($2, currentScope);
-                     writeValue($2, currentScope);
-                     } else {
-                     writeValue($2, currentScope);
-                     }
-
-
+                    if(semanticChecks == 1) {
+                       
+                        //IR code
+                        emitWriteId(returnName, otherScope);
+                        
+                        //Mips Code
+                        writeValue(returnName, otherScope);
+                    }
                 }
 
-    |   RETURN ID {printf("\nFunction Found: Return ID\n");
-                    // ----- AST actions ----- //
-                    $$ = AST_Write("return", $2, "");
+    |   RETURN ID {printf("\nFunction Found: Return ID\n"); 
+                    // AST actions
+                    $$ = AST_Write("Return", $2, "");
+                    
+                    // Semantic Checks
+                    char *returnID = getVarType($2, currentScope);
+                    //strcpy(returnType, returnID);
 
-                    // ----- No IR code Here I think
                     strcpy(returnName, $2);
                     strcpy(otherScope, currentScope);
-
-                    inreturn = 1;
-                    } 
+                    // Mips Code
+                  
+                } 
 ;
 
 
 CallList: {$$ = NULL;}
         | Math {
-            // ----- IR Code ----- //
-            paramMips($1->nodeType); // Gives us the value in here
+            $$ = add_tree("Call", $1, NULL); 
 
-            // ----- AST Tree -----//
-            $$ = add_tree("Call", $1, NULL);
+            // ----- Generate MIPS Code ----- //
+            paramMips();
         }
         | Math COMMA CallList {
-           
-            // ----- IR Code ----- //
-            paramMips($1->nodeType);
-
-            // ----- AST Tree ----- //
             $$ = add_tree("Call", $1, $3);
+            paramMips();
         }
 
 //Everything below here should be fine.
 Math: Math PLUS Math {printf("\nReconiged Rule: Addition Expression\n");
-                                
                             //intialize a number to 0
                              int num = 0;
 
                             //IF $1 and $3 are both numbers
-                            if($1->isNumber == 1 && $3->isNumber == 1) {
+                            if($1->isNumber && $3->isNumber == 1) {
                                 
                                 //change from characters to numbers
                                 //And Add them
@@ -381,11 +347,8 @@ Math: Math PLUS Math {printf("\nReconiged Rule: Addition Expression\n");
                                 //add the numbers and add it to first variable
                                 int number = num1 + num3;
                                 num += number;
-                                
-                                // ----- AST Tree ----- //
-                                char str[50];
-                                sprintf(str, "%d", num);
-                                $$ = addTree(str, 1);
+
+                                //printf("%d\n\n\n", num);
                             }
 
                             //If the $1 is a number but the $3 is a variable
@@ -402,10 +365,7 @@ Math: Math PLUS Math {printf("\nReconiged Rule: Addition Expression\n");
                                 int number = num1 + num3;
                                 num += number;
 
-                                // ----- AST Tree ----- //
-                                char str[50];
-                                sprintf(str, "%d", num);
-                                $$ = addTree(str, 1);
+                                //printf("%d\n\n\n", num);
                             } 
 
                             //Now $1 is variable and $3 is number
@@ -420,48 +380,25 @@ Math: Math PLUS Math {printf("\nReconiged Rule: Addition Expression\n");
                                 int number = num1 + num3;
                                 num += number;
 
-                                // ----- AST Tree ----- //
-                                char str[50];
-                                sprintf(str, "%d", num);
-                                $$ = addTree(str, 1);
+                                //printf("%d\n\n\n", num);
                             }
-                            
-                            else {
-                                    
-                                char *val1 = getValue($1->nodeType, currentScope);
-                                char *val2 = getValue($3->nodeType, currentScope);
 
-                                if(strcmp(val1, "NULL") != 0 && strcmp(val2, "NULL") != 0) {
-                                    
-                                    //Gets the numbers from inside of the values
-                                    int num1 = atoi(val1);
-                                    int num2 = atoi(val2);
-
-                                    int number;
-                                    
-                                    //add the numbers
-                                    number = num1 + num2;
-                                    num += number;
-                                    char str[50];
-                                    sprintf(str, "%d", num);
-
-                                    // ----- AST TREE ----- //
-                                    $$ = addTree(str, 1);
-                                } else {
-                                    mipsInside();
-
-                                    // ---- IR CODE -----//
-                                    addMips();
-
-                                    // ----- AST TREE -----//
-                                    $$ = add_tree("+", $1, $3);
-                                }
-
-
-
+                            //if we are adding both variables and no numbers
+                            else { 
+                                addMips();
+                                
                             }
-                    }
-        | Math MINUS Math {printf("\nReconiged Rule: Subtraction Expression Expression\n");
+
+                            /*change first nodeType to the added numbers
+                            Ex: x(x=4) + y(y=5) = 9 = $1->nodeType
+                            then if we have multiple expressions it will become:
+                                 9 + Addition
+                            */
+                            sprintf($1->nodeType, "%d", num);
+                            $$ = addTree($1->nodeType, 1);
+   
+                            }
+        | Math MINUS Math {printf("\nReconiged Rule: Addition Expression\n");
                             //intialize a number to 0
                             int num = 0;
 
@@ -514,34 +451,15 @@ Math: Math PLUS Math {printf("\nReconiged Rule: Addition Expression\n");
 
                             //if we are adding both variables and no numbers
                             else { 
-                                char *val1 = getValue($1->nodeType, currentScope); 
-                                char *val2 = getValue($3->nodeType, currentScope);
-
-                                // check in the Symbol tables are NULL or not.
-                                if(strcmp(val1, "NULL") != 0 && strcmp(val2, "NULL") != 0) {
                                 
-                                    // get the values
-                                    int num1 = atoi(val1);
-                                    int num2 = atoi(val2);
-
-                                    int number;
-
-                                    number = num1 - num2;
-                                    num += number;
-                                    char str[50];
-                                    sprintf(str, "%d", num);
-
-                                    // ----- AST Tree ----- //
-                                    $$ = addTree(str, 1);
-                                } else {
-                                    mipsInside();
-                                    subMips();
-
-                                    // ----- AST Tree ----- //
-                                    $$ = add_tree("+", $1, $3);
-                                }
                             }
-
+                            /*change first nodeType to the added numbers
+                            Ex: x(x=4) + y(y=5) = 9 = $1->nodeType
+                            then if we have multiple expressions it will become:
+                                 9 + Addition
+                            */
+                            sprintf($1->nodeType, "%d", num);
+                            $$ = addTree($1->nodeType, 1);
                             }
 
         | Math MULTIPLY Math {printf("\nReconiged Rule: Addition Expression\n");
@@ -597,28 +515,17 @@ Math: Math PLUS Math {printf("\nReconiged Rule: Addition Expression\n");
 
                             //if we are adding both variables and no numbers
                             else { 
-                                // 
-                                char *val1 = getValue($1->nodeType, currentScope); 
-                                char *val2 = getValue($3->nodeType, currentScope);
+                                
 
-                                if(strcmp(val1, "NULL") != 0 && strcmp(val2, "NULL") != 0) {
-                            
-                                    int num1 = atoi(val1);
-                                    int num2 = atoi(val2);
-
-                                    int number;
-
-                                    number = num1 * num2;
-                                    num += number;
-                                    char str[50];
-                                    sprintf(str, "%d", num);
-                                $$ = addTree(str, 1);
-                                } else {
-                                    mipsInside();
-                                    multiMips();
-                                    $$ = add_tree("+", $1, $3);
-                                }
+                                //printf("%d\n\n\n", num);
                             }
+                            /*change first nodeType to the added numbers
+                            Ex: x(x=4) + y(y=5) = 9 = $1->nodeType
+                            then if we have multiple expressions it will become:
+                                 9 + Addition
+                            */
+                            sprintf($1->nodeType, "%d", num);
+                            $$ = addTree($1->nodeType, 1);
                             }
 
         | Math DIVIDE Math {printf("\nReconiged Rule: Addition Expression\n");
@@ -626,7 +533,7 @@ Math: Math PLUS Math {printf("\nReconiged Rule: Addition Expression\n");
                             int num = 0;
 
                             //IF $1 and $3 are both numbers
-                            if($1->isNumber == 1 && $3->isNumber == 1) {
+                            if($1->isNumber && $3->isNumber == 1) {
                                 
                                 //change from characters to numbers
                                 //And Add them
@@ -674,45 +581,42 @@ Math: Math PLUS Math {printf("\nReconiged Rule: Addition Expression\n");
 
                             //if we are adding both variables and no numbers
                             else { 
-                                char *val1 = getValue($1->nodeType, currentScope); 
-                                char *val2 = getValue($3->nodeType, currentScope);
-
-                                if(strcmp(val1, "NULL") != 0 && strcmp(val2, "NULL") != 0) {
-                                
-                                    int num1 = atoi(val1);
-                                    int num2 = atoi(val2);
-
-                                    int number;
-
-                                    number = num1 / num2;
-                                    num += number;
-                                    char str[50];
-                                    sprintf(str, "%d", num);
-
-                                 // ----- AST Tree ----- //
-                                $$ = addTree(str, 1);
-                                } else {
-                                    mipsInside();
-
-                                    // ----- IR Code -----//
-                                    divideMips();
-
-                                    // ----- AST Tree ----- //
-                                    $$ = add_tree("+", $1, $3);
-                                }
+                               printf("Entered into this statement"); 
                             }
+                            /*change first nodeType to the added numbers
+                            Ex: x(x=4) + y(y=5) = 9 = $1->nodeType
+                            then if we have multiple expressions it will become:
+                                 9 + Addition
+                            */
+                            sprintf($1->nodeType, "%d", num);
+                            $$ = addTree($1->nodeType, 1);
                             }
 
         | OPAREN Math CPAREN {
             $$ = $2;
         } 
-        | ID {printf("\n ID\n");}
+        | ID {printf("\n ID\n");
+            
+            // Checks to make sure the ID is has already been declared
+            if(find($1, currentScope) == 0) {
+                printf("SemanticError: %s is not found\n", $1);
+                semanticChecks = 0;
+            }
+
+            //if the variable type is wrong throw semantic error
+            if (strcmp(getVariableType($1, currentScope), "int") != 0) {
+                    printf("Error: Variable %s is not of Type of int", $1);
+                    semanticChecks = 0;
+                }
+
+            $$ = addTree($1, 0);     
+        }
 
         | NUMBER {printf("\n In Number\n");
-                    char str[50];
-                    sprintf(str, "%d", $1);
-                    $$ =addTree(str, 1);
-                    }
+        char str[50];
+        sprintf(str, "%d", $1);
+        $$ = addTree(str,1); // put the number into the bottom of the tree
+    }
 
 ;
 

@@ -1,11 +1,16 @@
-int x;
-int y;
-int z;
+int add(int a, int b) {
+    int z;
 
-x = 4;
-y = 5;
+    z = a + b;
 
+    return z;
+}
 
-z = x + y + 5 + 2;
+int v;
 
-write z;
+v = add(300, 100);
+
+write v;
+
+int a[3];
+int b[2];

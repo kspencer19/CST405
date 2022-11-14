@@ -11,6 +11,7 @@ int words = 0;
 int chars = 0;
 int lines = 0;
 int errors = 0;
+
 %}
 
 letter      [a-zA-Z]
@@ -31,7 +32,7 @@ NUMBER      {digit}+(\.{digit}+)?(E[+\-]?(digit)+)?
 							}
 						}
 
-"int"	{words++; chars += strlen(yytext); 
+"int"|"char"|"float"|"void"	{words++; chars += strlen(yytext); 
 		 printf("%s : TYPE\n", yytext);
          yylval.string = strdup(yytext);
          return TYPE;
@@ -42,6 +43,13 @@ NUMBER      {digit}+(\.{digit}+)?(E[+\-]?(digit)+)?
 		 printf("%s : KEYWORD\n", yytext);
          yylval.string = strdup(yytext);
          return WRITE;
+		}
+
+"return" {words++; 
+		 chars += strlen(yytext);
+		 printf("%s : KEYWORD\n", yytext);
+         yylval.string = strdup(yytext);
+         return RETURN;
 		}
 
 {ID}	{words++; chars += strlen(yytext);
@@ -62,16 +70,76 @@ NUMBER      {digit}+(\.{digit}+)?(E[+\-]?(digit)+)?
          return SEMICOLON;
 		}
 
+","		{chars++;
+		 printf("%s : COMMA \n", yytext);
+         yylval.string = strdup(yytext);
+         return COMMA;
+		}
+
 "="		{chars++;
 		 printf("%s : EQ\n", yytext);
          yylval.string = strdup(yytext);
          return EQ;
 		}
 
+"("		{chars++;
+		 printf("%s : Left Paren\n", yytext);
+         yylval.string = strdup(yytext);
+         return OPAREN;
+		}
+
+")"		{chars++;
+		 printf("%s : Right Paren\n", yytext);
+         yylval.string = strdup(yytext);
+         return CPAREN;
+		}
+
+"["		{chars++;
+		 printf("%s : Open Bracket\n", yytext);
+         yylval.string = strdup(yytext);
+         return OBRACK;
+		}
+
+"]"		{chars++;
+		 printf("%s : Close Bracket\n", yytext);
+         yylval.string = strdup(yytext);
+         return CBRACK;
+		}
+
+"{"		{chars++;
+		 printf("%s : Open Curly Brace\n", yytext);
+         yylval.string = strdup(yytext);
+         return OCBRACE;
+		}
+
+"}"		{chars++;
+		 printf("%s : Close Curly Brace\n", yytext);
+         yylval.string = strdup(yytext);
+         return CCBRACE;
+		}
+
 "+" {chars++;
      printf("%s : OPERATOR\n", yytext);
      yylval.string = strdup(yytext);
-     return OP;
+     return PLUS;
+    }
+
+"-" {chars++;
+     printf("%s : OPERATOR\n", yytext);
+     yylval.string = strdup(yytext);
+     return MINUS;
+    }
+
+"*" {chars++;
+     printf("%s : OPERATOR\n", yytext);
+     yylval.string = strdup(yytext);
+     return MULTIPLY;
+    }
+
+"/" {chars++;
+     printf("%s : OPERATOR\n", yytext);
+     yylval.string = strdup(yytext);
+     return DIVIDE;
     }
 
 [\n]	{lines++; chars=0;}
