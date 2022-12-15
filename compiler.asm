@@ -1,15 +1,19 @@
 .text
 main:
-	addi $a0, $zero, 100
-	addi $a1, $zero, 300
-jal add
-move $t5, $v1
-li $v0, 1
-move $a0 $t5
+li $t1, 0
+li $t2, 10
+WhileStmt:
+bgt $t1, $t2, Exit
+	li $v0, 1
+	move $a0 $t1
+	syscall
+addi $a0, $0, 0xA
+addi $v0, $0, 0xB
 syscall
-li $v0, 10
-syscall
-.end main
-add:
-	add $v1, $a0, $a1
-	jr $ra
+add $t1, $t1, 1
+
+j WhileStmt
+Exit: 
+	li $v0, 10
+	syscall
+	.end main

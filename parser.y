@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "symbolTable.h"
 #include "symtab.h"
@@ -16,11 +17,17 @@ extern FILE* yyin;
 
 void yyerror(const char* s);
 char currentScope[50] = "global";
-char label[50];
+char label[50] = "IfStmt";
 char otherScope[50];
 char returnName[50];
 
 int inreturn = 0;
+
+int is_else = 0;
+
+int in_true = 0;
+
+int in_loop = 0;
 
 char *returnType;
 
@@ -29,6 +36,8 @@ int semanticChecks = 1;
 //$$ parses the tree back together
 //parser: reads right to left
 //find the first argument and second argument in this statement
+
+clock_t t;
 
 
 /*
@@ -47,6 +56,9 @@ int semanticChecks = 1;
 
 %token <string> TYPE
 %token <string> ID
+%token <string> IF
+%token <string> ELSE
+%token <string> WHILE
 %token <char> SEMICOLON
 %token <char> COMMA
 %token <char> EQ
@@ -61,13 +73,22 @@ int semanticChecks = 1;
 %token <char> MULTIPLY
 %token <char> DIVIDE
 %token <number> NUMBER
+%token <string> LT
+%token <string> GT
+%token <string> GTE
+%token <string> LTE
+%token <string> EQEQ
+%token <string> NOTEQ
+%token <string> AND
+%token <string> OR
 %token WRITE
+%token WRITEln
 %token RETURN
 
 %printer { fprintf(yyoutput, "%s", $$); } ID;
 %printer { fprintf(yyoutput, "%d", $$); } NUMBER;
 
-%type <ast> Program DeclList Decl VarDeclList VarDecl Array FunDecl ParamDecl ParamDecList ParamDecListTail Block CallList StmtList Stmt Expr Math
+%type <ast> Program DeclList Decl VarDeclList VarDecl Array FunDecl ParamDecl ParamDecList ParamDecListTail Block CallList StmtList Stmt Expr Math IfExpr WhileStmt RelOps
 %left PLUS MINUS
 %left MULTIPLY DIVIDE
 
@@ -75,7 +96,13 @@ int semanticChecks = 1;
 
 %%
 Program: DeclList  {$$ = $1;
-                        endMipsFile();
+                    endMipsFile();
+
+                    //Clock Execution
+                    t = clock() - t;
+                    double time_taken = ((double)t)/CLOCKS_PER_SEC; // in seconds
+ 
+                    printf("Program took %f seconds to execute \n", time_taken);
                     }
         
 ;
@@ -108,8 +135,6 @@ VarDecl:    TYPE ID SEMICOLON {printf("\n RECOGNIZED RULE: VARIABLE DECLERATION\
 
                                 printTable();
                             }
-    // |       TYPE ID OBRACK NUMBER CBRACK SEMICOLON {printf("\n Array Decleration\n");}
-    
 
 ;
 
@@ -147,7 +172,7 @@ Array:      TYPE ID OBRACK NUMBER CBRACK SEMICOLON {printf("\n Recognized Rule: 
 
 FunDecl: TYPE ID OPAREN {
                             // ----- Symbol Table ----- //
-                            addItem($2, "func", $1, currentScope);
+                           // addItem($2, "func", $1, currentScope);
 
                             // copy function name to currentscope
                             strcpy(currentScope, $2);
@@ -179,23 +204,17 @@ ParamDecl: TYPE ID {printf("\nEncountered Parameter\n");
                         $$ = AST_assignment("Type", $1, $2);
                     }
 
-// |   TYPE ID OBRACK CBRACK {printf("\nParameter Array\n");}
+|   TYPE ID OBRACK CBRACK {printf("\nParameter Array\n");}
 ;
 
-Block:  OCBRACE VarDeclList StmtList CCBRACE {printf("\nBlock Statement\n");
-                                                // ----- AST Actions ----- //
-                                                $$ = add_tree("block", $2, $3);
-
-                                                //currentScope -> Global
-                                                strcpy(currentScope, "global");                                                
-                                            }
-;
 
 StmtList: Stmt  
         | Stmt StmtList
 ;
 
 Stmt: Expr SEMICOLON {$$ = $1;}
+ | IfExpr {$$ = $1;}
+ | WhileStmt {$$ = $1;}
 ;
 
 Expr:   Math {printf("\nRECOGNIZED RULE: Primary Statement\n");
@@ -248,7 +267,8 @@ Expr:   Math {printf("\nRECOGNIZED RULE: Primary Statement\n");
                         $$ = AST_assignment("=", $1, str);
 
                         // ----- IR Code ----- //
-                        
+                        loadValueInts($1, currentScope, str);
+
                         }
     
     | ID EQ ID OPAREN CallList CPAREN {printf("\nCall Function: In ID\n");
@@ -281,17 +301,7 @@ Expr:   Math {printf("\nRECOGNIZED RULE: Primary Statement\n");
                         }   
 
         
-    // | ID OBRACK NUMBER CBRACK EQ Expr {printf("\n Recongized Rule: Array Expression\n");
-
-
-	// }
-    
-    
-    
-    
-    
-    
-    
+    | ID OBRACK Expr CBRACK EQ Expr {printf("\n Recongized Rule: Array Expression\n");}
 
     | ID EQ Math {printf("\nRecongized Rule: Math Expression\n");
                     // ----- Semantic Checks ----- //
@@ -306,7 +316,7 @@ Expr:   Math {printf("\nRECOGNIZED RULE: Primary Statement\n");
                         printf("\n\n\n\n%s\n\n\n\n", $3->nodeType);
                 
                         // ----- IR code ----- //
-                        loadAddition($1, currentScope);
+                      //  loadAddition($1, currentScope);
 
                     } else {
                         // ----- IR code ----- //
@@ -328,10 +338,25 @@ Expr:   Math {printf("\nRECOGNIZED RULE: Primary Statement\n");
                      moveFunction($2, currentScope);
                      writeValue($2, currentScope);
                      } else {
-                     writeValue($2, currentScope);
+                     
+                     if(in_true == 1) {
+                        jumpExit();
+                     }
+                     
+                     if (in_loop == 1) {
+                        writeValueInWhile($2, currentScope);
+                     } else {
+                        writeValue($2, currentScope);
+                     }
+                     
+                     
                      }
 
 
+                }
+           
+            |   WRITEln {printf("\nRECONGIZED RULE: write ln Statement\n");
+                    writeNewLine();
                 }
 
     |   RETURN ID {printf("\nFunction Found: Return ID\n");
@@ -344,8 +369,56 @@ Expr:   Math {printf("\nRECOGNIZED RULE: Primary Statement\n");
 
                     inreturn = 1;
                     } 
+
 ;
 
+IfExpr: IF OPAREN RelOps CPAREN Block {printf("Entering if statement");
+                                        in_true = 1;
+                                        // ----- Generate IR Code -----//
+                                         // ! Need to Create a label statement here //
+                                        MipsCreateLabel(label);
+
+                                        // ----- AST ACTIONS ----- //
+                                        $$ = add_tree($1, $3, $5);
+}
+
+|   IF OPAREN RelOps CPAREN Block {printf("Entering in First if statement");
+                                    in_true = 1;
+
+                                    // --- Create Mips Label --- //
+                                     MipsCreateLabel(label);
+    } 
+    ELSE Block { printf("Entering into an else statement\n");
+                        // --- Create Mips Label --- //
+                        MipsCreateLabel("ElseStmt");
+                        jumpLabel("ElseStmt");
+
+                        // ! --- Create the AST Tree --- //
+                        $$ = add_tree($1, $3, $5);
+                        $$ = ast_func("else", $7, $8);
+
+}   
+;
+
+WhileStmt:  WHILE {strcpy(label, "WhileStmt"); whileMipsCreateLabel(label); in_loop = 1;} 
+OPAREN RelOps CPAREN Block {printf("\nRecongized Rule: While Statement\n");  
+                                        // --- Generate IR Code --- //
+                                       // jumpLabel(label);
+
+                                        // --- AST Tree --- //
+                                        $$ = add_tree($1, $4, $6);
+                                        }
+
+;
+
+Block:  OCBRACE VarDeclList StmtList CCBRACE {printf("\nBlock Statement\n");
+                                                // ----- AST Actions ----- //
+                                                $$ = add_tree("block", $2, $3);
+
+                                                //currentScope -> Global
+                                                strcpy(currentScope, "global");                                                
+                                            }
+;
 
 CallList: {$$ = NULL;}
         | Math {
@@ -415,6 +488,12 @@ Math: Math PLUS Math {printf("\nReconiged Rule: Addition Expression\n");
                                 char *val1 = getValue($1->nodeType, currentScope);
                                 int num1 = atoi(val1);
                                 int num3 = atoi($3->nodeType);
+
+                                if (in_loop == 1) {
+                                    increment($1->nodeType, $3->nodeType, currentScope); // loop through the statement
+                                    jumpLabel(label);
+                                }
+                                    
 
                                 //add the numbers and add it to first variable
                                 int number = num1 + num3;
@@ -508,6 +587,12 @@ Math: Math PLUS Math {printf("\nReconiged Rule: Addition Expression\n");
                                 //add the numbers and add it to first variable
                                 int number = num1 - num3;
                                 num += number;
+
+                                //decrement inside of the loop
+                                if (in_loop == 1) {
+                                    decrement($1->nodeType, $3->nodeType, currentScope); // loop through the statement
+                                    jumpLabel(label);
+                                }
 
                                 //printf("%d\n\n\n", num);
                             }
@@ -706,7 +791,10 @@ Math: Math PLUS Math {printf("\nReconiged Rule: Addition Expression\n");
         | OPAREN Math CPAREN {
             $$ = $2;
         } 
-        | ID {printf("\n ID\n");}
+        | ID {printf("\n ID\n");
+                printf("\n\n\n\n%s\n\n\n\n", $1);
+                $$ = addTree($1, 0);
+            }
 
         | NUMBER {printf("\n In Number\n");
                     char str[50];
@@ -716,6 +804,91 @@ Math: Math PLUS Math {printf("\nReconiged Rule: Addition Expression\n");
 
 ;
 
+//Greater then or Equal too
+RelOps: Math GTE Math {printf("\nGreater Than\n");
+                        // --- Generate IR code --- //
+                        if (in_loop == 1) {
+                            bleMips($1->nodeType, $3->nodeType, currentScope, "Exit");
+                        } else {
+                            bgeMips($1->nodeType, $3->nodeType, currentScope, label);
+                        }
+                        
+
+                        // --- AST Actions --- //
+                        $$ = add_tree($2, $1, $3);
+                        }
+        
+        // Less than or equal to
+        | Math LTE Math {printf("\nGreater Than\n");
+                        // --- Generate IR code --- //
+                        if(in_loop == 1) {
+                            bgeMips($1->nodeType, $3->nodeType, currentScope, "Exit");
+                        } else {
+                              bleMips($1->nodeType, $3->nodeType, currentScope, label);
+                        }
+                       
+                       
+                        // --- AST Actions --- //
+                        $$ = add_tree($2, $1, $3);
+                        }
+
+        // Greater than
+        | Math GT Math {printf("\nGreater Than\n");
+                        // --- Generate IR code --- //
+                        if(in_loop == 1) {
+                            bltMips($1->nodeType, currentScope, $3->nodeType, "Exit");
+                            printf("\n\n\n\n\n%s\n\n\n\n\n", $1->nodeType);
+                            
+                        } else {
+                            bgtMips($1->nodeType, $3->nodeType, currentScope, label);
+                        }
+                        
+                       
+                        // --- AST Actions --- //
+                        $$ = add_tree($2, $1, $3);
+                        }
+            // Less than
+        | Math LT Math {printf("\nGreater Than\n");
+                        // --- Generate IR code --- //
+                        if(in_loop == 1) {
+                            bgtMips($1->nodeType, $3->nodeType, currentScope, "Exit");
+                            printf("this is what the value is\n\n\n%s\n\n\n\n", $1->nodeType);
+                        }else {
+                            bltMips($1->nodeType, currentScope, $3->nodeType, label);
+                        }
+
+
+                        // --- AST Actions --- //
+                        $$ = add_tree($2, $1, $3);
+                        }
+
+          //equal equal
+        | Math EQEQ Math {printf("\nGreater Than\n");
+                        // --- Generate IR code --- //
+                        beqMips($1->nodeType, $3->nodeType, currentScope, label);
+                        
+
+                       // --- AST Actions --- //
+                       $$ = add_tree($2, $1, $3);
+                        }
+
+         // Not equal
+        | Math NOTEQ Math {printf("\nGreater Than\n");
+                        // --- Generate IR code --- //
+                        if(in_loop == 1) {
+                            bgtMips($1->nodeType, $3->nodeType, currentScope, "Exit");
+                        } else {
+                            bneMips($1->nodeType, $3->nodeType, currentScope, label);
+                        }
+                        
+
+
+                        // --- AST Actions --- //
+                        $$ = add_tree($2, $1, $3);
+                        }
+;
+
+
 %%
 
 int main(int argc, char**argv)
@@ -723,6 +896,9 @@ int main(int argc, char**argv)
 	// #ifdef YYDEBUG
 	// 	yydebug = 1;
 	// #endif
+
+    t = clock();
+
 
 	printf("\n\n##### COMPILER STARTED #####\n\n");
     initIRcodeFile();
